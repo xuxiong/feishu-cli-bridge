@@ -16,13 +16,11 @@ class ParsedCommand:
 def parse_command(text: str) -> ParsedCommand:
     value = text.strip()
     # Feishu long-connection text may include a plain-text mention prefix like "@_user_1 ".
-    # Strip one or more leading mention tokens so slash commands can be recognized.
+    # Strip one or more leading mention tokens so commands can be recognized.
     value = re.sub(r"^(?:@\S+\s+)+", "", value).strip()
-    if not value.startswith("/"):
-        return ParsedCommand(action="ignore")
 
     submit_match = re.match(
-        r"^/(codex|gemini|qwen|codefree|claude)\s+(?!run\b)(.+)$",
+        r"^/?(codex|gemini|qwen|codefree|claude)\s+(?!run\b)(.+)$",
         value,
         flags=re.IGNORECASE,
     )
@@ -35,10 +33,12 @@ def parse_command(text: str) -> ParsedCommand:
         return ParsedCommand(action="cancel", job_id=value[len("/cancel ") :].strip())
     if value.startswith("/logs "):
         return ParsedCommand(action="logs", job_id=value[len("/logs ") :].strip())
-    if value == "/help":
+    if value.lower() in {"/help", "help"}:
         return ParsedCommand(action="help")
 
-    return ParsedCommand(action="unknown")
+    if value.startswith("/"):
+        return ParsedCommand(action="unknown")
+    return ParsedCommand(action="ignore")
 
 
 def normalize_job_id(job_id: str) -> str:
@@ -60,11 +60,12 @@ def help_text() -> str:
     return "\n".join(
         [
             "Available commands:",
-            "/codex <task>",
-            "/gemini <task>",
-            "/qwen <task>",
-            "/codefree <task>",
-            "/claude <task>",
+            "codex <task> (also supports /codex)",
+            "gemini <task> (also supports /gemini)",
+            "qwen <task> (also supports /qwen)",
+            "codefree <task> (also supports /codefree)",
+            "claude <task> (also supports /claude)",
+            "help (also supports /help)",
             "/cancel <job_id>",
             "/logs <job_id>",
         ]

@@ -36,11 +36,11 @@ Then expose `http://127.0.0.1:8787` and configure:
 
 ## Supported Bot Commands
 
-- `/codex <task>`
-- `/gemini <task>`
-- `/qwen <task>`
-- `/codefree <task>`
-- `/claude <task>`
+- `codex <task>` (also supports `/codex <task>`)
+- `gemini <task>` (also supports `/gemini <task>`)
+- `qwen <task>` (also supports `/qwen <task>`)
+- `codefree <task>` (also supports `/codefree <task>`)
+- `claude <task>` (also supports `/claude <task>`)
 - `/cancel <job_id>`
 - `/logs <job_id>`
 
