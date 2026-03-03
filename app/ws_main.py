@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 import lark_oapi as lark
 
-from app.bridge_core import job_worker, process_message_event, resolve_exec_workdir
+from app.bridge_core import (
+    choose_default_exec_workdir,
+    job_worker,
+    process_message_event,
+    resolve_exec_workdir,
+    resolve_exec_workdirs,
+)
 from app.config import load_settings
 from app.feishu_client import FeishuClient
 from app.runner import TmuxRunner
@@ -18,6 +24,14 @@ def create_host() -> SimpleNamespace:
         raise RuntimeError("FEISHU_APP_ID and FEISHU_APP_SECRET are required for ws mode")
 
     exec_workdir = resolve_exec_workdir(settings.exec_workdir)
+    exec_workdir_aliases, exec_workdir_allowlist = resolve_exec_workdirs(settings.exec_workdirs)
+    exec_workdir = choose_default_exec_workdir(
+        exec_workdir,
+        exec_workdir_aliases,
+        exec_workdir_allowlist,
+    )
+    if exec_workdir:
+        exec_workdir_allowlist.add(exec_workdir)
     store = StateStore(settings.data_dir)
     runner = TmuxRunner(store.logs_dir, store.runtime_dir)
     feishu = FeishuClient(
@@ -36,6 +50,8 @@ def create_host() -> SimpleNamespace:
         feishu=feishu,
         queue=queue,
         exec_workdir=exec_workdir,
+        exec_workdir_aliases=exec_workdir_aliases,
+        exec_workdir_allowlist=exec_workdir_allowlist,
         loop=asyncio.get_event_loop(),
     )
     return SimpleNamespace(state=state)

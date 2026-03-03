@@ -8,7 +8,13 @@ import lark_oapi as lark
 from fastapi import FastAPI, Request, Response
 from lark_oapi.core.model import RawRequest
 
-from app.bridge_core import job_worker, process_message_event, resolve_exec_workdir
+from app.bridge_core import (
+    choose_default_exec_workdir,
+    job_worker,
+    process_message_event,
+    resolve_exec_workdir,
+    resolve_exec_workdirs,
+)
 from app.config import load_settings
 from app.feishu_client import FeishuClient
 from app.runner import TmuxRunner
@@ -19,6 +25,14 @@ def create_app() -> FastAPI:
     app = FastAPI(title="feishu-cli-bridge", version="0.3.0")
     settings = load_settings()
     exec_workdir = resolve_exec_workdir(settings.exec_workdir)
+    exec_workdir_aliases, exec_workdir_allowlist = resolve_exec_workdirs(settings.exec_workdirs)
+    exec_workdir = choose_default_exec_workdir(
+        exec_workdir,
+        exec_workdir_aliases,
+        exec_workdir_allowlist,
+    )
+    if exec_workdir:
+        exec_workdir_allowlist.add(exec_workdir)
 
     if not settings.verification_token:
         raise RuntimeError("FEISHU_VERIFICATION_TOKEN is required for webhook mode")
@@ -42,6 +56,8 @@ def create_app() -> FastAPI:
     app.state.feishu = feishu
     app.state.queue = queue
     app.state.exec_workdir = exec_workdir
+    app.state.exec_workdir_aliases = exec_workdir_aliases
+    app.state.exec_workdir_allowlist = exec_workdir_allowlist
     app.state.loop = None
 
     def on_message_receive(data: lark.im.v1.P2ImMessageReceiveV1) -> None:

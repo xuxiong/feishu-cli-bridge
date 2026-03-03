@@ -41,6 +41,7 @@ Then expose `http://127.0.0.1:8787` and configure:
 - `qwen <task>` (also supports `/qwen <task>`)
 - `codefree <task>` (also supports `/codefree <task>`)
 - `claude <task>` (also supports `/claude <task>`)
+- `<runner> --workdir <alias|/abs/path> <task>` (optional, per-job workdir override)
 - `/cancel <job_id>`
 - `/logs <job_id>`
 
@@ -48,6 +49,7 @@ Then expose `http://127.0.0.1:8787` and configure:
 
 - Fixed command prefixes only (no raw shell eval).
 - Optional fixed execution directory: `EXEC_WORKDIR`.
+- Optional multi-directory allowlist: `EXEC_WORKDIRS`.
 - Optional directory-switch blocking: `DISALLOW_DIR_SWITCH=true`.
 - Optional dangerous-operation blocking: `DISALLOW_DANGEROUS_TASK=true`.
 - Cancel queued jobs (`/cancel <job_id>`).
@@ -70,7 +72,24 @@ cp .env.example .env
 - `FEISHU_ENCRYPT_KEY`: optional for webhook mode encrypted callback.
 - `FEISHU_HTTP_TRUST_ENV`: defaults to `false`; set `true` only if you intentionally want to use system proxy env vars.
 - `CODEX_COMMAND`, `GEMINI_COMMAND`, `QWEN_COMMAND`, `CODEFREE_COMMAND`, `CLAUDE_COMMAND`.
-- `EXEC_WORKDIR`, `DISALLOW_DIR_SWITCH`, `DISALLOW_DANGEROUS_TASK`.
+- `EXEC_WORKDIR`, `EXEC_WORKDIRS`, `DISALLOW_DIR_SWITCH`, `DISALLOW_DANGEROUS_TASK`.
+
+`EXEC_WORKDIRS` format example:
+
+```bash
+EXEC_WORKDIRS="bridge=/Users/apple/feishu-cli-bridge,codefree=/Users/apple/owork/srdcloud/codefree-cli,/tmp"
+```
+
+If `EXEC_WORKDIR` is empty but `EXEC_WORKDIRS` is set, the default workdir becomes:
+- the first alias in lexical order, otherwise
+- the first path in lexical order.
+
+Use in chat:
+
+```text
+codex --workdir bridge 修复登录接口超时问题
+codex --workdir /Users/apple/feishu-cli-bridge 更新 README
+```
 
 Recommended non-interactive + auto-approval mapping:
 

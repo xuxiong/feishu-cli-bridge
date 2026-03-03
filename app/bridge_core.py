@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,12 @@ from app.security import (
 )
 from app.store import StateStore
 
+WORKDIR_ALIAS_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$", flags=re.IGNORECASE)
+WORKDIR_TASK_PREFIX_PATTERN = re.compile(
+    r"^(?:--(?:workdir|cwd))\s+(\S+)\s+(.+)$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
 
 def _preview_text(value: str, limit: int = 180) -> str:
     cleaned = (value or "").replace("\n", "\\n")
@@ -35,14 +42,108 @@ def _preview_text(value: str, limit: int = 180) -> str:
     return cleaned[:limit] + "..."
 
 
+def _resolve_directory(path_text: str, env_name: str) -> str:
+    path = Path(path_text).expanduser().resolve()
+    if not path.exists() or not path.is_dir():
+        raise RuntimeError(f"{env_name} is invalid: {path}")
+    return str(path)
+
+
 def resolve_exec_workdir(raw_workdir: str) -> str:
     value = (raw_workdir or "").strip()
     if not value:
         return ""
-    path = Path(value).expanduser().resolve()
-    if not path.exists() or not path.is_dir():
-        raise RuntimeError(f"EXEC_WORKDIR is invalid: {path}")
-    return str(path)
+    return _resolve_directory(value, "EXEC_WORKDIR")
+
+
+def resolve_exec_workdirs(raw_workdirs: str) -> tuple[dict[str, str], set[str]]:
+    aliases: dict[str, str] = {}
+    allowlist: set[str] = set()
+    value = (raw_workdirs or "").strip()
+    if not value:
+        return aliases, allowlist
+
+    for token in value.split(","):
+        entry = token.strip()
+        if not entry:
+            continue
+        alias = ""
+        path_text = entry
+        if "=" in entry:
+            left, right = entry.split("=", 1)
+            alias = left.strip().lower()
+            path_text = right.strip()
+            if not alias:
+                raise RuntimeError("EXEC_WORKDIRS has empty alias")
+            if not WORKDIR_ALIAS_PATTERN.fullmatch(alias):
+                raise RuntimeError(f"EXEC_WORKDIRS alias is invalid: {alias}")
+
+        resolved = _resolve_directory(path_text, "EXEC_WORKDIRS")
+        allowlist.add(resolved)
+        if alias:
+            existing = aliases.get(alias)
+            if existing and existing != resolved:
+                raise RuntimeError(f"EXEC_WORKDIRS alias conflicts: {alias}")
+            aliases[alias] = resolved
+
+    return aliases, allowlist
+
+
+def choose_default_exec_workdir(
+    default_workdir: str,
+    aliases: dict[str, str],
+    allowlist: set[str],
+) -> str:
+    if default_workdir:
+        return default_workdir
+    if aliases:
+        first_alias = sorted(aliases.keys())[0]
+        return aliases[first_alias]
+    if allowlist:
+        return sorted(allowlist)[0]
+    return ""
+
+
+def extract_workdir_selector(task: str) -> tuple[str, str]:
+    value = (task or "").strip()
+    if not value:
+        return "", ""
+    match = WORKDIR_TASK_PREFIX_PATTERN.match(value)
+    if not match:
+        return "", value
+    selector = match.group(1).strip()
+    stripped_task = match.group(2).strip()
+    return selector, stripped_task
+
+
+def pick_exec_workdir(
+    selector: str,
+    default_workdir: str,
+    aliases: dict[str, str],
+    allowlist: set[str],
+) -> str:
+    key = (selector or "").strip()
+    if not key:
+        return default_workdir
+
+    alias = key.lower()
+    if alias in aliases:
+        return aliases[alias]
+
+    resolved = str(Path(key).expanduser().resolve())
+    if resolved in allowlist:
+        return resolved
+
+    if aliases:
+        options = ", ".join(sorted(aliases.keys()))
+        raise HTTPException(
+            status_code=400,
+            detail=f"workdir not allowed: {key}. allowed aliases: {options}",
+        )
+    raise HTTPException(
+        status_code=400,
+        detail=f"workdir not allowed: {key}. configure EXEC_WORKDIRS first",
+    )
 
 
 def build_runner_command(runner: str, task: str, settings: Settings) -> list[str]:
@@ -74,6 +175,8 @@ async def process_message_event(host: Any, data: lark.im.v1.P2ImMessageReceiveV1
     feishu: FeishuClient = host.state.feishu
     queue: asyncio.Queue[str] = host.state.queue
     exec_workdir: str = host.state.exec_workdir
+    exec_workdir_aliases: dict[str, str] = host.state.exec_workdir_aliases
+    exec_workdir_allowlist: set[str] = host.state.exec_workdir_allowlist
 
     try:
         header = data.header
@@ -173,22 +276,29 @@ async def process_message_event(host: Any, data: lark.im.v1.P2ImMessageReceiveV1
             return
 
         if parsed.action == "submit":
-            validate_task(parsed.task, settings.max_task_length)
+            workdir_selector, run_task = extract_workdir_selector(parsed.task)
+            workdir = pick_exec_workdir(
+                workdir_selector,
+                exec_workdir,
+                exec_workdir_aliases,
+                exec_workdir_allowlist,
+            )
+            validate_task(run_task, settings.max_task_length)
             if settings.disallow_dangerous_task:
-                validate_no_dangerous_ops(parsed.task)
+                validate_no_dangerous_ops(run_task)
             if settings.disallow_dir_switch:
-                validate_no_directory_switch(parsed.task)
+                validate_no_directory_switch(run_task)
 
-            command = build_runner_command(parsed.runner, parsed.task, settings)
+            command = build_runner_command(parsed.runner, run_task, settings)
             now = store.now_ts()
             job_id = f"job-{uuid.uuid4().hex[:10]}"
             job = {
                 "job_id": job_id,
                 "status": "queued",
                 "runner": parsed.runner,
-                "task": parsed.task,
+                "task": run_task,
                 "command": command,
-                "workdir": exec_workdir,
+                "workdir": workdir,
                 "requested_by": user_id,
                 "chat_id": chat_id,
                 "created_at": now,
@@ -202,7 +312,7 @@ async def process_message_event(host: Any, data: lark.im.v1.P2ImMessageReceiveV1
                 (
                     f"job queued: {job_id}\n"
                     f"runner: {parsed.runner}\n"
-                    f"workdir: {exec_workdir or '(no restriction)'}"
+                    f"workdir: {workdir or '(no restriction)'}"
                 ),
             )
     except HTTPException as exc:

@@ -25,6 +25,7 @@ class Settings:
     codefree_command: str
     claude_command: str
     exec_workdir: str
+    exec_workdirs: str
     disallow_dir_switch: bool
     disallow_dangerous_task: bool
     queue_concurrency: int
@@ -60,6 +61,7 @@ def load_settings() -> Settings:
         codefree_command=os.getenv("CODEFREE_COMMAND", "codefree"),
         claude_command=os.getenv("CLAUDE_COMMAND", "claude"),
         exec_workdir=os.getenv("EXEC_WORKDIR", ""),
+        exec_workdirs=os.getenv("EXEC_WORKDIRS", ""),
         disallow_dir_switch=_env_bool("DISALLOW_DIR_SWITCH", default=True),
         disallow_dangerous_task=_env_bool("DISALLOW_DANGEROUS_TASK", default=True),
         queue_concurrency=max(1, int(os.getenv("QUEUE_CONCURRENCY", "1"))),

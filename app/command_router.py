@@ -65,6 +65,7 @@ def help_text() -> str:
             "qwen <task> (also supports /qwen)",
             "codefree <task> (also supports /codefree)",
             "claude <task> (also supports /claude)",
+            "Optional: <runner> --workdir <alias|/abs/path> <task>",
             "help (also supports /help)",
             "/cancel <job_id>",
             "/logs <job_id>",
