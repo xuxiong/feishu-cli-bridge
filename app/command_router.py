@@ -29,10 +29,13 @@ def parse_command(text: str) -> ParsedCommand:
         task = submit_match.group(2).strip()
         return ParsedCommand(action="submit", runner=runner, task=task)
 
-    if value.startswith("/cancel "):
-        return ParsedCommand(action="cancel", job_id=value[len("/cancel ") :].strip())
-    if value.startswith("/logs "):
-        return ParsedCommand(action="logs", job_id=value[len("/logs ") :].strip())
+    cancel_match = re.match(r"^/?cancel\s+(.+)$", value, flags=re.IGNORECASE)
+    if cancel_match:
+        return ParsedCommand(action="cancel", job_id=cancel_match.group(1).strip())
+
+    logs_match = re.match(r"^/?logs\s+(.+)$", value, flags=re.IGNORECASE)
+    if logs_match:
+        return ParsedCommand(action="logs", job_id=logs_match.group(1).strip())
     if value.lower() in {"/help", "help"}:
         return ParsedCommand(action="help")
 
